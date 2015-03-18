@@ -49,6 +49,96 @@ class Advanced_ORM extends Kohana_ORM {
   }
 
 
+  public function build($model, array $values = NULL)
+  {
+    $column = Inflector::plural($model);
+
+    $col = Arr::get($this->_has_many, $column);
+
+    $foreign_key = Arr::get($col, 'foreign_key');
+    $polymorphic = Arr::get($col, 'polymorphic', FALSE);
+
+    $object = ORM::factory($model);
+
+    if ($object instanceof ORM_Polymorph)
+    {
+      $foreign_key = $object->_polymorph . '_id';
+      $foreign_type = $object->_polymorph . '_type';
+
+      $values[$foreign_type] = $this->object_name();
+    }
+
+    $values[$foreign_key] = $this->id;
+
+    return $object->values($values);
+  }
+
+
+
+  public function get($column)
+  {
+    if (array_key_exists($column, $this->_object))
+    {
+      return parent::get($column);
+    }
+    elseif (isset($this->_related[$column]))
+    {
+      // Return related model that has already been fetched
+      return $this->_related[$column];
+    }
+    elseif (isset($this->_belongs_to[$column]))
+    {
+      return parent::get($column);
+    }
+    elseif (isset($this->_has_one[$column]))
+    {
+      return parent::get($column);
+    }
+    elseif (isset($this->_has_many[$column]))
+    {
+      $model = ORM::factory($this->_has_many[$column]['model']);
+
+      if (isset($this->_has_many[$column]['through']))
+      {
+        // Grab has_many "through" relationship table
+        $through = $this->_has_many[$column]['through'];
+
+        // Join on through model's target foreign key (far_key) and target model's primary key
+        $join_col1 = $through.'.'.$this->_has_many[$column]['far_key'];
+        $join_col2 = $model->_object_name.'.'.$model->_primary_key;
+
+        $model->join($through)->on($join_col1, '=', $join_col2);
+
+        // Through table's source foreign key (foreign_key) should be this model's primary key
+        $col = $through.'.'.$this->_has_many[$column]['foreign_key'];
+        $val = $this->pk();
+      }
+      else
+      {
+        if ($model instanceof ORM_Polymorph)
+        {
+          $col = $model->_object_name.'.'.$model->polymorph_id();
+          $val = $this->pk();
+          $model->where($model->polymorph_type(), '=', $this->_object_name);
+        }
+        else
+        {
+          // Simple has_many relationship, search where target model's foreign key is this model's primary key
+          $col = $model->_object_name.'.'.$this->_has_many[$column]['foreign_key'];
+          $val = $this->pk();
+        }
+      }
+
+      return $model->where($col, '=', $val);
+    }
+    else
+    {
+      throw new Kohana_Exception('The :property property does not exist in the :class class',
+          array(':property' => $column, ':class' => get_class($this)));
+    }
+  }
+
+
   /**
    * Default LIMIT, usefull for big data
    * @var integer
