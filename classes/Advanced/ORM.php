@@ -62,8 +62,8 @@ class Advanced_ORM extends Kohana_ORM {
 
     if ($object instanceof ORM_Polymorph)
     {
-      $foreign_key = $object->_polymorph . '_id';
-      $foreign_type = $object->_polymorph . '_type';
+      $foreign_key = $object->polymorph_id();
+      $foreign_type = $object->polymorph_type();
 
       $values[$foreign_type] = $this->object_name();
     }
