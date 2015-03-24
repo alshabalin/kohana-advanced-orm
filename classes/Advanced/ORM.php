@@ -60,7 +60,7 @@ class Advanced_ORM extends Kohana_ORM {
 
     $object = ORM::factory($model);
 
-    if ($object instanceof ORM_Polymorph)
+    if ($polymorphic && $object instanceof ORM_Polymorph)
     {
       $foreign_key = $object->polymorph_id();
       $foreign_type = $object->polymorph_type();
@@ -115,7 +115,7 @@ class Advanced_ORM extends Kohana_ORM {
       }
       else
       {
-        if ($model instanceof ORM_Polymorph)
+        if (Arr::get($this->_has_many[$column], 'polymorphic', FALSE) === TRUE && $model instanceof ORM_Polymorph)
         {
           $col = $model->_object_name.'.'.$model->polymorph_id();
           $val = $this->pk();
@@ -133,8 +133,7 @@ class Advanced_ORM extends Kohana_ORM {
     }
     else
     {
-      throw new Kohana_Exception('The :property property does not exist in the :class class',
-          array(':property' => $column, ':class' => get_class($this)));
+      return parent::get($column);
     }
   }
 
@@ -148,6 +147,7 @@ class Advanced_ORM extends Kohana_ORM {
   public function find_all()
   {
     $this->_check_scope_deleted();
+    $this->_check_scope_published();
     $result = parent::find_all();
     $this->after_find();
     return $result;
@@ -156,12 +156,14 @@ class Advanced_ORM extends Kohana_ORM {
   public function count_all()
   {
     $this->_check_scope_deleted();
+    $this->_check_scope_published();
     return parent::count_all();
   }
 
   public function find()
   {
     $this->_check_scope_deleted();
+    $this->_check_scope_published();
     $result = parent::find();
     $this->after_find();
     return $result;
@@ -269,6 +271,8 @@ class Advanced_ORM extends Kohana_ORM {
 
     parent::delete();
 
+    $this->update_count();
+
     $this->after_delete();
 
     return $this;
@@ -328,6 +332,98 @@ class Advanced_ORM extends Kohana_ORM {
     if ( ! $this->_with_deleted && is_array($this->_deleted_column))
     {
       $this->where($this->_deleted_column['column'], 'IS', NULL);
+    }
+    return $this;
+  }
+
+
+
+
+  /**
+   * Publishing
+   */
+
+  protected $_published_column = NULL;
+
+  public function published_column()
+  {
+    return $this->_published_column;
+  }
+
+  public function publish()
+  {
+    // $this->before_publish();
+
+    if (is_array($this->_published_column))
+    {
+      if ( ! $this->_loaded)
+      {
+        throw new Kohana_Exception('Cannot publish :model model because it is not loaded.', [':model' => $this->_object_name]);
+      }
+
+      $column = $this->_published_column['column'];
+      $format = $this->_published_column['format'];
+
+      $this->values([$column => ($format === TRUE) ? time() : date($format)])->save();
+
+      return $this->reset(TRUE)->clear();
+    }
+
+    $this->update_count();
+
+    // $this->after_publish();
+
+    return $this;
+  }
+
+  protected $_with_published = TRUE;
+
+  public function with_unpublished()
+  {
+    $this->_with_published = FALSE;
+    return $this;
+  }
+
+  public function only_unpublished()
+  {
+    if ($this->_published_column !== NULL)
+    {
+      $this->with_unpublished()->where($this->_published_column['column'], 'IS', NULL);
+    }
+    return $this;
+  }
+
+  public function is_published()
+  {
+    if ($this->_published_column !== NULL)
+    {
+      return $this->{$this->_published_column['column']} !== NULL;
+    }
+  }
+
+  public function unpublish()
+  {
+    if ($this->_published_column !== NULL)
+    {
+      if ( ! $this->_loaded)
+      {
+        throw new Kohana_Exception('Cannot unpublish :model model because it is not loaded.', [':model' => $this->_object_name]);
+      }
+
+      $column = $this->_published_column['column'];
+
+      $this->values([$column => NULL])->update();
+    }
+
+    return $this;
+  }
+
+  protected function _check_scope_published()
+  {
+    if ($this->_with_published && is_array($this->_published_column))
+    {
+      $this->where($this->_published_column['column'], 'IS NOT', NULL);
+      $this->where($this->_published_column['column'], '<=', date('Y-m-d H:i:s'));
     }
     return $this;
   }
@@ -593,6 +689,31 @@ class Advanced_ORM extends Kohana_ORM {
     }
   }
 
+  /**
+   * Count caching
+   *
+   * These functions update `related_count` column to parent object
+   *
+   * For example:
+   * We have got Model_Article and Model_Comment,
+   * so a Model_Article has many Model_Comment objects.
+   * If it got a `comments_count` column, we can cache count of comments 
+   * to this column on each change to comments.
+   */
+
+  public function update_count()
+  {
+    $count_column = $this->_object_plural . '_count';
+    foreach ($this->_belongs_to as $col => $related)
+    {
+      $model = $this->{$col};
+      if ($model->loaded() && array_key_exists($count_column, $model->table_columns()))
+      {
+        $model->values([$count_column => $model->{$this->_object_plural}->count_all()])->update();
+      }
+    }
+  }
+
 
   /**
    * Callbacks
@@ -600,24 +721,34 @@ class Advanced_ORM extends Kohana_ORM {
 
   public function create(Validation $validation = NULL)
   {
+    $this->before_save();
     $this->before_create();
     parent::create($validation);
+    $this->update_count();
     $this->after_create();
+    $this->after_save();
     return $this;
   }
 
   public function update(Validation $validation = NULL)
   {
-    $this->before_update();
-    parent::update($validation);
-    $this->after_update();
-    return $this;
-  }
-
-  public function save(Validation $validation = NULL)
-  {
     $this->before_save();
-    parent::save($validation);
+    $this->before_update();
+
+    $need_count = FALSE;
+    if ($this->_deleted_column !== NULL /*&& $this->changed($this->_deleted_column)*/)
+    {
+      $need_count = TRUE;
+    }
+
+    parent::update($validation);
+
+    if ($need_count === TRUE)
+    {
+      $this->update_count();
+    }
+
+    $this->after_update();
     $this->after_save();
     return $this;
   }

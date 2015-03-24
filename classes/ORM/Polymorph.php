@@ -42,7 +42,7 @@ class ORM_Polymorph extends ORM {
       else
       {
         $model = $this->_related($column);
- 
+
         // Use this model's column and foreign model's primary key
         $col = $model->_object_name.'.'.$model->_primary_key;
         $val = $this->_object[$this->_belongs_to[$column]['foreign_key']];
