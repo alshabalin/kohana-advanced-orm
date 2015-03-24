@@ -736,7 +736,7 @@ class Advanced_ORM extends Kohana_ORM {
     $this->before_update();
 
     $need_count = FALSE;
-    if ($this->_deleted_column !== NULL /*&& $this->changed($this->_deleted_column)*/)
+    if ($this->_deleted_column !== NULL && $this->changed($this->_deleted_column['column']))
     {
       $need_count = TRUE;
     }
