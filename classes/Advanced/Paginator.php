@@ -10,6 +10,7 @@ class Advanced_Paginator {
   protected $_next_page      = NULL;
   protected $_prev_page      = NULL;
   protected $_page_get_param = 'page';
+  protected $_pages_range    = [];
 
 
   public function __construct($count = 0, $count_per_page = NULL, $page_get_param = NULL)
@@ -42,6 +43,33 @@ class Advanced_Paginator {
       $this->_prev_page = NULL;
     }
 
+    if ($this->_page_count <= 10)
+    {
+      for ($i = 1; $i <= $this->_page_count; $i++)
+      {
+        $this->_pages_range[$i] = $i;
+      }
+    }
+    else
+    {
+      $first = max(2, $this->_current_page - 4);
+      $last = min($first + 8, $this->_page_count - 1);
+
+      if ($last - $first < 9)
+      {
+        $first -= 8 - ($last - $first);
+      }
+
+      $this->_pages_range[$first - 1] = $first - 1 === 1 ? '1' : '...';
+
+      for ($i = $first; $i <= $last; $i++)
+      {
+        $this->_pages_range[$i] = $i;
+      }
+
+      $this->_pages_range[$last + 1] = $last + 1 < $this->_page_count ? '...' : $this->_page_count;
+    }
+
     static::$current = $this;
   }
 
@@ -68,6 +96,7 @@ class Advanced_Paginator {
       'next_page'      => $this->_next_page,
       'prev_page'      => $this->_prev_page,
       'page_get_param' => $this->_page_get_param,
+      'pages_range'    => $this->_pages_range,
     ];
   }
 
