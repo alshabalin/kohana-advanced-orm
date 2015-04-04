@@ -226,7 +226,7 @@ abstract class InitModel {
    */
   public static function order_by($column, $direction = NULL)
   {
-    return ORM::factory(get_class(new static))->order_by($column, $direction = NULL);
+    return ORM::factory(get_class(new static))->order_by($column, $direction);
   }
 
   /**
